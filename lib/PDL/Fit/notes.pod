@@ -1,0 +1,299 @@
+=pod
+
+/*****************************************************************************
+ * general_linear_fit.asy -- An Asymptote library for linear data fitting    *
+ *                                                                           *
+ * by:  David Mertens <mertens2@illinois.edu>                                *
+ * last change: 2009/06/10                                                   *
+ *****************************************************************************/
+/* Implements general linear fitting and evaluation routines for an arbitrary
+ * collection of functions.  Also implements more specific polynomial fitting
+ * and evaluation routines to make life simple.
+ *   For those unfamiliar with general linear fitting, the idea is that you
+ * have a number of functions, f_1(x), f_2(x), etc, which may be linear or
+ * nonlinear in x.  A general linear fit tries to find the best linear combina-
+ * tion of these functions:
+ *     f(x) = c_1 * f_1(x) + c_2 * f_2(x) + ....
+ * This code is based on an algorithm from Michael T. Heath's book
+ * "Scientific Computing: An Introductory Survey".
+ * 
+ * Outline:
+ * HouseholderSolve - uses the Householder method to perform a least-squares
+ *   best fit to the data.
+ * PolyFit - Computes the polynomial coefficients of the least-squares fit to
+ *   the data.
+ * PolyVal - Evaluates the polynomial with given coefficents at the desired
+ *   points.
+ * PolyFunc - Creates a function that returns the polynomial evaluation you
+ *   would obtain by running PolyVal.
+ * GenFit, GenFitVal, GenFitFunc - Like the PolyFit routines, but for arbitrary
+ *   (user-supplied) functions.
+ */
+
+/*****************************************************************************
+ * HouseholderSolve -- uses the Householder method for computing the linear  *
+ *                     least-squares coefficients for the matrix equation    *
+ *                                                                           *
+ * [ A11  A12  A13 ... A1n ] [ c1 ]    [ y1 ]                                *
+ * [ A21  A22  A23 ... A2n ] [ .  ]    [ y2 ]                                *
+ * [         ...           ] [ .  ] =~ [ .  ]                                *
+ * [         ...           ] [ .  ]    [ .  ]                                *
+ * [         ...           ] [ cn ]    [ .  ]                                *
+ * [ Am1  Am2  Am3 ... Amn ]           [ ym ]                                *
+ *                                                                           *
+ * For a complete reference, see the third chapter of Heath.                 *
+ *****************************************************************************/
+real [] HouseholderSolve(real [][] A, real [] y) {
+	// This will treat the first index as a row index and the second index as
+	// a column index (see the notation above).  For least-squares fitting,
+	// m >= n.  Also, y must have m elements.
+	int m = A.length, n = A[0].length;
+	if(m < n) {
+		abort(
+			"Attempting to perform a linear least-squares fit with a " +
+			format("matrix whose width (%i) is greater than its ", m) +
+			format("height (%i)!  This is not possible!", n)
+		);
+	}
+	if(y.length != m) {
+		abort(
+			"Attempting to perform a linear least-squares fit with a " +
+			format("matrix whose height (%i) is different from the  ", m) +
+			format("result vector (%i)!  This is not possible!", y.length)
+		);
+	}
+
+	// Set up the variables.  The variable coefs holds the coefficients.  The
+	// other rather arbitrarily named variables are meant to coincide with
+	// Heath's notation.
+	real [] coefs = new real[n];
+	real alpha, beta, gamma;
+	real [] v;
+	int j, k;
+
+	///////////////////////////////////////////////////////////////////////////
+	// TO SIMPLIFY THE NOTATION AND INDEXING, I WILL TRANSPOSE A SO THAT THE //
+	//            FIRST INDEX REFERS TO THE COLUMN, NOT THE ROW.             //
+	///////////////////////////////////////////////////////////////////////////
+	A = transpose(A);
+
+	// compute the upper-triangular matrix and transform y concurrently
+	for(k = 0; k < n; ++k) {
+		alpha = -sqrt(sum(A[k][k:]^2));
+		if(A[k][k] != 0) {
+			// edge condition since asymptote's sgn(0) returns 0.
+			alpha *= sgn(A[k][k]);
+		}
+		v = array(m, 0.);
+		v[k:] = A[k][k:];
+		v[k] -= alpha;
+		beta = sum(v^2);
+		if(beta != 0) {
+			// apply the Householder transformation to the matrix
+			for(j = k; j < n; ++j) {
+				gamma = sum(v * A[j]);
+				A[j] -= (2 * gamma / beta) * v;
+			}
+			// apply the Householder transformation to y
+			gamma = sum(v * y);
+			y -= (2 * gamma / beta) * v;
+		}
+	}
+	// compute the coefficients using back-substitution
+	for(k = n - 1; k > -1; --k) {
+		coefs[k] = y[k] / A[k][k];
+		y -= A[k] * coefs[k];
+	}
+	
+	return coefs;
+}
+
+
+/*****************************************************************************
+ * realfunc -- a typedef that corresponds to a real function of a real value *
+ *****************************************************************************/
+typedef real realfunc(real);
+real ConstFunc(real x) { return 1; }
+
+
+real [] PolyFit(real [] x, real [] y, int order) {
+/*****************************************************************************
+ * PolyFit -- Performs a linear least-squares fit of the given data to a     *
+ *            polynomial of the specified order.                             *
+ *                                                                           *
+ * Performs a fit to the specified data with a polynomial of specified order.*
+ * It returns the coefficients of the polynomial in the form                 *
+ *  c0 + c1 * x + c2 * x^2 + ...                                             *
+ * Note that this is the OPPOSITE order from what Matlab gives.              *
+ *                                                                           *
+ * For a complete reference, see the third chapter of Heath.                 *
+ *****************************************************************************/
+
+	// First things first - check the arguments!
+	// The lengths of x and y must agree:
+	if(x.length != y.length) {
+		abort(
+			"The x and y data supplied to PolyFit must have the same " +
+			"number of elements.  For what you gave me, x has " +
+			format("%i elements and y has ", x.length) +
+			format("%i elements.", y.length)
+		);
+	}
+	int m = x.length, n = order + 1, j, k;
+	// Make sure we can solve the system (m >= n).
+	if(m < n) {
+		abort(
+			"Attempting to perform a polynomial fit with a polynomial of " +
+			format("order %i ", order) +
+			format("using %i points.  Either give me more data or use a ", m) +
+			"lower order polynomial."
+		);
+	}
+
+	// Create and fill A
+	real [][] A = new real[m][n];
+	real xval;
+	for(k = 0; k < m; ++k) {
+		xval = x[k];
+		for(j = 0; j < n; ++j) {
+			A[k][j] = xval^j;
+		}
+	}
+	
+	// Use the Householder solver to finish:
+	return(HouseholderSolve(A, y));
+}
+real [] PolyFit(pair [] data, int order) {
+	real [] x = sequence(new real (int n) {return data[n].x;}, data.length);
+	real [] y = sequence(new real (int n) {return data[n].y;}, data.length);
+	return PolyFit(x, y, order);
+}
+
+/*****************************************************************************
+ * PolyVal -- Computes the value of a polynomial with given coefficients at  *
+ *            the desired values of x.  The polynomial should be of the form *
+ *  c0 + c1 * x + c2 * x^2 + ...                                             *
+ * Note that this is the OPPOSITE order from what Matlab gives, but it is    *
+ * precisely what is given by PolyFit.                                       *
+ *****************************************************************************/
+real [] PolyVal(real [] coefs, real [] x){
+// Evaluates the polynomial with given coefficients at the specified values for x.
+	real [] y = array(x.length, coefs[0]);
+	for(int j = 1; j < coefs.length; ++j) {
+		y += x ^ j * coefs[j];
+	}
+	return y;
+}
+real PolyVal(real [] coefs, real x) {
+	return (PolyVal(coefs, new real [] {x}))[0];
+}
+
+/*****************************************************************************
+ * PolyFunc -- Creates a function that computes corresponding polynomial for *
+ *             a given value of x.  In other words, it returns f:            *
+ *  f(x) = c0 + c1 * x + c2 * x^2 + ...                                      *
+ *****************************************************************************/
+realfunc PolyFunc(real [] coefs) {
+	return (new real(real x) {
+		real y = coefs[0];
+		for(int j = 1; j < coefs.length; ++j) y += x ^ j * coefs[j];
+		return y;
+		});
+}
+
+
+real [] GenFit(real [] x, real [] y, realfunc [] funcs) {
+/*****************************************************************************
+ * GenFit -- Performs a linear least-squares fit of the given data to a      *
+ *           given collection of real functions and returns the coefficitns. *
+ *****************************************************************************/
+
+	// First things first - check the arguments!
+	// The lengths of x and y must agree:
+	if(x.length != y.length) {
+		abort(
+			"The x and y data supplied to GenFit must have the same " +
+			"number of elements.  For what you gave me, x has " +
+			format("%i elements and y has ", x.length) +
+			format("%i elements.", y.length)
+		);
+	}
+	int m = x.length, n = funcs.length, j, k;
+	// Make sure we can solve the system (m >= n).
+	if(m < n) {
+		abort(
+			format("Attempting to perform a general fit with %i ", m) +
+			format("functions and %i data points; either give me more ", n) +
+			"data or use fewer functions."
+		);
+	}
+
+	// Create and fill A
+	real [][] A = new real[m][n];
+	realfunc func;
+	for(j = 0; j < n; ++j) {
+		func = funcs[j];
+		for(k = 0; k < m; ++k) {
+			A[k][j] = func(x[k]);
+		}
+	}
+	
+	// Use the Householder solver to finish:
+	return(HouseholderSolve(A, y));
+}
+real [] GenFit(pair [] data, realfunc [] funcs) {
+	real [] x = sequence(new real (int n) {return data[n].x;}, data.length);
+	real [] y = sequence(new real (int n) {return data[n].y;}, data.length);
+	return GenFit(x, y, funcs);
+}
+
+/*****************************************************************************
+ * GenFitVal -- Computes the value of a linear combination of functions with *
+ *              given coefficients at the desired values of x given.         *
+ *****************************************************************************/
+real [] GenFitVal(real [] coefs, real [] x, realfunc [] funcs){
+	// Make sure nothing dumb is happening:
+	if(coefs.length != funcs.length) {
+		abort(
+			"Attempting to call GenFitVal for which the number of " +
+			format("coefficeints, %i, is not equal to the ", coefs.length) +
+			format("number of functions, %i.", funcs.length)
+		);
+	}
+	real [] y = array(x.length, 0);
+	int j, k;
+	for(j = 0; j < coefs.length; ++j) {
+		for(k = 0; k < x.length; ++k) {
+			y[k] += funcs[j](x[k]) * coefs[j];
+		}
+	}
+	return y;
+}
+real GenFitVal(real [] coefs, real x, realfunc [] funcs) {
+	return (GenFitVal(coefs, new real [] {x}, funcs))[0];
+}
+
+/*****************************************************************************
+ * GenFitFunc -- Creates a function that computes corresponding linear       *
+ *               combination of given functions:                             *
+ *  f(x) = c1*f_1(x) + c2*f_2(x) + ...                                       *
+ *****************************************************************************/
+realfunc GenFitFunc(real [] coefs, realfunc [] funcs) {
+	// Make sure nothing dumb is happening:
+	if(coefs.length != funcs.length) {
+		abort(
+			"Attempting to call GenFitFunc for which the number of " +
+			format("coefficeints, %i, is not equal to the ", coefs.length) +
+			format("number of functions, %i.", funcs.length)
+		);
+	}
+	return (new real(real x) {
+		real y = 0;
+		for(int j = 0; j < coefs.length; ++j) y += funcs[j](x) * coefs[j];
+		return y;
+		});
+}
+
+=cut
+
+1;
