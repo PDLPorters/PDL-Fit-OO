@@ -1,0 +1,440 @@
+# The Householder module.
+# This is a stub module, and will (hopefully, some day) be turned
+# into PDL::Fit::Linear, and will include methods besides the
+# Householder method, such as SVD and Givens rotations.
+
+
+############## Version and Documentation ##############
+pp_addpm({At => Top}, <<'INTRO_AND_DOCUMENTATION');
+
+BEGIN { 
+$VERSION = '0.0.1'
+};
+
+# To get debugging help, set $PDL::Fit::Householder::DEBUG = 1
+$DEBUG = 0;
+
+=head1 NAME
+
+PDL::Fit::Householder - a pure-PDL linear fitting module that uses the
+Householder diagonalization technique.
+
+=head1 VERSION
+
+This document describes PDL::Fit::Householder version 0.0.1
+
+=head1 SYNOPSIS
+
+ use PDL::Fit::Householder;
+ # Assume that $x and $y have been loaded or computed elsewhere
+ 
+
+=head1 DESCRIPTION
+
+This provides linear least squares fitting using Householder
+transformations, also known as elementary reflectors.  It is written in
+pure PDL, which means that there are no external libraries involved
+(though you will need a compiler in order to install it).
+
+A Householder transformation is an orthogonal transformation. Orthogonal
+transformations have the virtua that, unlike Gaussian elimination, they
+numerically stable and will not amplify errors in the process of solving
+the system.
+
+The module provides one function meant for public consumption, and two
+internal functions which can be very useful if you need them.  The
+method that you will almost always be using from this package is
+C<Householder>, and the two internal functions are C<_Householder> and
+C<_backsub>.
+
+=head2 Polynomial Fitting
+
+I think polynomial fitting is the simplest use case, so I will start
+with it.  Suppose you have some data, C<$x>.
+
+=cut
+INTRO_AND_DOCUMENTATION
+
+# This only matters for CPAN's rendering of the .pd file and does not
+# impact the resulting module file:
+=head1 FUNCTIONS
+=cut
+
+############## Perl Functions ##############
+# The primary publically-usable function as well as utility functions.
+
+# Placing these at the middle will ensure that they come after the
+# =head1 FUNCTIONS pod in the resulting .pm file.  The function pp_addpm
+# defaults to the middle, so this isn't strictly necessary, but I think
+# it's good to be explicity:
+pp_addpm({At => 'Middle'}, <<'HOUSEHOLDER');
+
+=head2 Householder
+
+=for ref
+
+Fits your supplied data to a polynomial, collection of functions,
+or collection of piddles.
+
+Here a basic usage summary:
+
+=for usage
+
+ # The returned value depends on calling context:
+ $coefs = $data->Householder(...)
+ %results = $data->Householder(...)
+ 
+ # The arguments determine what Householder actually does.
+ # Full-blown usage:
+ ... = $data->Householder(ORDER, FUNCREF|PIDDLE, FUNCREF|PIDDLE, ..., $t)
+
+=head3 Arguments
+
+=over
+
+=item ORDER
+
+A scalar.  This specifies the order of the polynomial you would like to
+use to perform the fit; you must specify C<$t> if you specify an order,
+and you must specify only one ORDER in your argument list.
+
+=item FUNCREF
+
+A reference to a function that you want to use in the fit.  All
+functions passed to Householder must accept a single piddle argument
+because the fitting process is going to call C<func($t)> when it runs.
+That also means that you must supply C<$t> if you have any function
+references.
+
+=item PIDDLE
+An arbitrary data set that you want to use in the fit.  All piddles
+must have dimensions compatible with C<$data> (and by extension, with
+C<$t>).
+
+=item C<$t>
+
+A collection of times (or more generally, the dependent variable) at
+which the polynomial and/or reference functions will be evaluated in the
+process of performing the fit.  C<$t> must have dimensions compatible
+with C<$data>, and must be the last argument in the list.  You only need
+to supply C<$t> if you indicate a polynomial fit or pass function
+references.
+
+=back
+ 
+Here are some simple examples:
+
+=for example
+
+ # Fit $data to a third-order polynomial:
+ $coefs = $data->Householder(3, $t);
+ # Fit $data to a second order polynomial plus the exponential funtion:
+ $coefs = $data->Householder(2, &exp, $t);
+ 
+ # You expect one signal to be a linear combination of a number of other
+ # signals:
+ $coefs = $data->Householder($signal1, $signal2, $signal3);
+
+All piddles (including the time $t) must have dimensions that are
+compatible with C<$data>.
+
+=cut
+
+sub Householder {
+	my $data = $_[0];
+	barf("Usage: Householder") unless (ref $data =~ /PDL/);
+	my ($t, $poly_order, @stuff_to_fit);
+
+	### Process each argument in @_ ###
+	
+	for (my $arg_count = 1; $arg_count < @_; $arg_count++) {
+		my $arg = $_[$arg_count];
+
+		# First see if we've got a scalar:
+		if (not ref $arg) {
+			# Make sure we've not already set up a polynomial fit:
+			if (defined $poly_order) {
+				barf("incorrect usage of function PDL::Fit::Householder\n"
+				."Error with argument $arg_count:\n"
+				."You can only supply one polynomial order in a fit");
+			}
+
+			# save the polynomial order and make sure it's valid:
+			$poly_order = $arg + 0;
+			if ($poly_order < 0 or $poly_order !~ /^\d+$/) {
+				barf("incorrect usage of function PDL::Fit::Householder\n"
+				."Error with argument $arg_count:\n"
+				."The polynomial order must be an integer greater than or equal to zero");
+			}
+			
+			# Add polynomial orders to @stuff_to_fit in ascending order
+			push (@stuff_to_fit, $i) for (my $i = 0; $i <= $poly_order; $i++);
+			
+			# Get the time from the end of @_
+			unless (defined $t) {
+				$t = pop;
+				_check_piddle($data, $t, -1);
+			}
+		}
+
+		# Next check for a code reference
+		elsif (ref $arg =~ /CODE/) {
+			push @stuff_to_fit, $arg;
+
+			# Get the time from the end of @_
+			unless (defined $t) {
+				$t = pop;
+				_check_piddle($data, $t, -1);
+			}
+		}
+
+		# Next check for a piddle reference
+		elsif (ref $arg =~ /PDL/) {
+			_check_piddle($data, $arg, $arg_count);
+			push @stuff_to_fit, $arg;
+		}
+		
+		# They've exhausted their options, so barf:
+		else {
+			barf("incorrect usage of function PDL::Fit::Householder\n"
+			."Error with argument $arg_count:\n"
+			."Must be a scalar, function reference, or piddle");
+		}
+	}
+	
+	### Build matrix and copy data for fitting ###
+	my @piddles_to_fit;
+	foreach(@stuff_to_fit) {
+		if (not ref) {
+			push @piddles_to_fit, $t ** $_;
+		}
+		elsif (ref =~ /CODE/) {
+			push @piddles_to_fit, $_($t);
+		}
+		elsif (ref =~ /PDL/) {
+			push @piddles_to_fit
+		}
+	}
+	my $A = cat(@stuff_to_fit)->transpose;
+	my $y = $data->copy->dummy(0);
+
+	$y->_Householder($A);
+	my $coefs = $y->_backsub($A);
+	
+	# Eventually return coefficients, residual, method, etc if requested
+	return $coefs if (defined wantarray and not wantarray);
+	my ($residual);
+	return (
+		coefs => $coefs,
+		residual => $residual,
+		method => 'Householder',
+		diagonalized_matrix => $A,
+		manipulated_results => $y,
+	) if (wantarray);
+	
+}
+
+# Utility function that makes sure the supplied $t piddle is good.
+# Barfs if it finds trouble.
+sub _check_piddle {
+	my ($data, $piddle, $arg_count) = @_;
+	my $message = "incorrect usage of function PDL::Fit::Householder\n";
+	$message .= "Error with argument $arg_count: " if $arg_count > 0;
+	$message .= "Error with last argument: " if $arg_count == -1;
+	# Make sure $piddle is a piddle
+	if (not defined $piddle or ref $piddle !~ /PDL/) {
+		barf($message . "Must be a piddle but is not.");
+	}
+	# Make sure the dimensions are compatible
+	eval { $data + $piddle };
+	if ($@) {
+		barf($message . "Piddle has incompatible dimensions");
+	}
+}
+
+HOUSEHOLDER
+
+pp_add_exported('Householder');
+
+
+############## PDL::PP Functions ##############
+
+=head2 C<_Householder>
+
+=cut
+
+# _Householder
+pp_def('_Householder',
+	Pars => 'y(i, m); A(n, m); [t]v(m);',
+	Doc => <<'HOUSEHOLDER_DOC',
+=for ref
+
+Internal routine that upper-triangularizes a matrix using the
+Householder method.
+
+In the process of diagonalizing C<$A>, this function WILL MODIFY both
+C<$A> and C<$y>, so don't pass it variables that you intend to use
+afterwards!
+
+I would like to add code to process bad values in C<$y> that will simply
+get skipped if found.  But I haven't implemented it yet.  Also, I'm not
+sure what to do about bad values in C<$A>, though I could simply skip
+them, too.  Suggestions would be appreciated.
+
+Here's a simple example:
+
+=for example
+
+ # you must build $y and $A ahead of time
+ $y->_Householder($A);
+ my $coefs = $y->_backsub($A);
+
+=cut
+HOUSEHOLDER_DOC
+
+	Code => q{
+		double alpha, beta, gamma;
+		int j, k;
+		int M = $SIZE(m);
+		int N = $SIZE(n);
+		threadloop %{
+		loop(i) %{
+			/* Note n is the number of columns, so n < m for this to work */
+			loop(n) %{
+				/* Compute alpha and build v */
+				alpha = 0;
+				for (j = n; j < M; j++) {
+					alpha += $A(m => j) * $A(m => j);
+					$v(m => j) = $A(m => j);
+				}
+				alpha = sqrt(alpha);
+				if ($A(m => n) > 0)
+					alpha = -alpha;
+				$v(m => n) -= alpha;
+				
+				beta = 0;
+				for (j = n; j < M; j++) {
+					beta += $v(m => j) * $v(m => j);
+				}
+				
+				if (beta != 0) {
+					// apply the Householder transformation to the
+					// remaining submatrix, column j, row k
+					for (j = n; j < N; j++) {
+						// Get the dot product of v and the jth
+						// column of the submatrix, called gamma:
+						gamma = 0;
+						for (k = n; k < M; k++)
+							gamma += $v(m => k) * $A(n => j, m => k);
+						// now subtract a scaled version of v, based
+						// on gamma, from the submatrix's jth
+						// column:
+						for (k = n; k < M; k++)
+							$A(n => j, m => k) -= 2 * gamma / beta * $v(m => k);
+					}
+					
+					// apply the Householder transformation to y
+					// Get the dot product of v and y:
+					gamma = 0;
+					for (k = n; k < M; k++)
+						gamma += $v(m => k) * $y(m => k);
+					
+					// subtract a scaled copy of v from y
+					for (k = n; k < M; k++) {
+						$y(m => k) -= (2 * gamma / beta) * $v(m => k);
+					}
+				}
+			%}
+		%}
+		%}
+	},
+);
+
+=head2 C<_backsub>
+
+=cut
+
+pp_def('_backsub',
+	Pars => 'y(i, m); A(n, m); [o]coefs(i, n);',
+	Doc => <<'BACKSUB_DOC',
+=for ref
+
+Internal routine that performs the back-substitution necessary for
+solving triangularized systems.
+
+Once you have triangularized your C<$A> matrix using C<_Householder>,
+use this method to extract the coefficients.
+
+Here's a simple example:
+
+=for example
+
+ # you must build $y and $A ahead of time
+ $y->_Householder($A);
+ my $coefs = $y->_backsub($A);
+
+=cut
+BACKSUB_DOC
+	Code => q{
+		int j, k;
+		double tmp;
+		int N = $SIZE(n);
+		threadloop %{
+		loop (i) %{
+			// Remember, n is the number of columns and must be
+			// less than or equal to m.  Start at the lowest-right
+			// diagonal entry:
+			for (j = N-1; j > -1; j--) {
+				tmp = $y(m => j);
+				for (k = N-1; k > j; k--) {
+					tmp -= $A(n => k, m => j) * $coefs(n => k);
+				}
+				$coefs(n => j) = tmp / $A(n => j, m => j);
+			}
+		%}
+		%}
+	},
+);
+
+
+pp_addpm({At => 'Bottom'}, <<'FINAL_DOCUMENTATION');
+
+=head1 AUTHOR
+
+David Mertens  C<< <mertens2@illinois.edu> >>
+
+=head1 LICENCE AND COPYRIGHT
+
+Copyright (c) 2010, David Mertens C<< <mertens2@illinois.edu> >>. All rights reserved.
+
+This module is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself. See L<perlartistic>.
+
+
+=head1 DISCLAIMER OF WARRANTY
+
+BECAUSE THIS SOFTWARE IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY
+FOR THE SOFTWARE, TO THE EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN
+OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+PROVIDE THE SOFTWARE "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
+EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE
+ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH
+YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL
+NECESSARY SERVICING, REPAIR, OR CORRECTION.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR
+REDISTRIBUTE THE SOFTWARE AS PERMITTED BY THE ABOVE LICENCE, BE
+LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL,
+OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE
+THE SOFTWARE (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING
+RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A
+FAILURE OF THE SOFTWARE TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF
+SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+
+=cut
+
+FINAL_DOCUMENTATION
