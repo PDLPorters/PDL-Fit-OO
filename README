@@ -27,7 +27,12 @@ To install this module, run the following commands:
 
 DEPENDENCIES
 
-None.
+PDL
+
+
+BUILD DEPENDENCIES
+
+Module::Build::PDL, Test::More, Test::Excpetions
 
 
 COPYRIGHT AND LICENCE
