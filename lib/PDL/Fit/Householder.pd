@@ -152,19 +152,23 @@ sub Householder {
 	barf("Usage: Householder")
 		if (not defined wantarray or ref ($data) !~ /PDL/);
 	
-	# Strip out undefs from the args list
+	# Strip out undefs from the args list while mapping the new list to
+	# the original:
+	my @original_index_for = ('');
 	my $i = 0;
-	my $arg_count = 1;
+	my $arg_index = 1;
+	(5, undef, 'hello', undef, '5);
 	while ($i < @args) {
 		if (defined $args[$i]) {
 			$i++;
+			push @original_index_for, $arg_index;
 		}
 		else {
 			@args = splice (@args, $i, 1);
-			carp("Argument $arg_count was undefined in call to Householder")
+			carp("Argument $arg_index was undefined in call to Householder")
 				if $WARN_ON_UNDEF;
 		}
-		$arg_count++;
+		$arg_index++;
 	}
 	
 	# We need at least one argument after $data:
@@ -190,7 +194,7 @@ sub Householder {
 
 	### Process each argument in @args ###
 	
-	ARGUMENT: for ($arg_count = 1; @args; $arg_count++) {
+	ARGUMENT: for ($arg_index = 1; @args; $arg_index++) {
 		my $arg = shift @args;
 
 		# First see if we've got a scalar:
@@ -200,7 +204,7 @@ sub Householder {
 				_my_barf("multiple scalars\n"
 				."When you supply a scalar to the fit, you indicate that you want to perform\n"
 				."a linear fit of the given order, but you seem to have supplied two scalars."
-				, $arg_count);
+				, $original_index_for[$arg_index]);
 			}
 
 			# save the polynomial order and make sure it's valid:
@@ -214,7 +218,7 @@ sub Householder {
 				."or non-integer exponents, use an anonymous sub with the desired exponent:\n"
 				.'  $data->Householder(3, sub {$_[0]**(-2.3)}, $t);'."\n"
 				."That will fit your data to a third-order polynomial and t^-2.3"
-				, $arg_count);
+				, $original_index_for[$arg_index]);
 			}
 			
 			# Add polynomial orders to @stuff_to_fit in ascending order
@@ -222,9 +226,9 @@ sub Householder {
 				push (@stuff_to_fit, $i);
 			}
 			
-			# Get the time from the end of @_
+			# Get the time from the end of @args
 			unless (defined $t) {
-				$t = pop @_;
+				$t = pop @args;
 				_check_piddle($data, $t, -1);
 			}
 		}
@@ -232,38 +236,35 @@ sub Householder {
 		# Next check for a code reference
 		elsif (ref ($arg) =~ /CODE/) {
 			push @stuff_to_fit, $arg;
-			my ($t, $results) = sequence(10);
+			my $results;
 			eval { $results = &$arg($data) };
 			if ($@) {
 				_my_barf("Function reference must be able to process piddles."
-					, $arg_count);
+					, $original_index_for[$arg_index]);
 			}
 			eval { cat($results, $data) };
 			if ($@) {
 				_my_barf("\nFunction reference must return a piddle with dimensions compatible to its input"
-					, $arg_count);
+					, $original_index_for[$arg_index]);
 			}
 
-			# Get the time from the end of @_
+			# Get the time from the end of @args
 			unless (defined $t) {
-				# function reference cannot be the last argument
-				unless (@_) {
-				}
-
-				$t = pop @_;
+				$t = pop @args;
 				_check_piddle($data, $t, -1);
 			}
 		}
 
 		# Next check for a piddle reference
 		elsif (ref ($arg) =~ /PDL/) {
-			_check_piddle($data, $arg, $arg_count);
+			_check_piddle($data, $arg, $original_index_for[$arg_index]);
 			push @stuff_to_fit, $arg;
 		}
 		
 		# They've exhausted their options, so barf:
 		else {
-			_my_barf("Must be a scalar, function reference, or piddle.", $arg_count);
+			_my_barf("Must be a scalar, function reference, or piddle."
+				, $original_index_for[$arg_index]);
 		}
 	}
 	
@@ -300,10 +301,10 @@ sub Householder {
 }
 
 sub _my_barf {
-	my ($message, $arg_count) = @_;
+	my ($message, $arg_index) = @_;
 	$message = "incorrect usage of function PDL::Fit::Householder\n"
 		."Error with "
-		. ($arg_count == -1 ? 'last argument' : "argument $arg_count")
+		. ($arg_index == -1 ? 'last argument' : "argument $arg_index")
 		.': '. $message;
 	barf($message);
 }
@@ -311,18 +312,18 @@ sub _my_barf {
 # Utility function that makes sure the supplied $t piddle is good.
 # Barfs if it finds trouble.
 sub _check_piddle {
-	my ($data, $piddle, $arg_count) = @_;
+	my ($data, $piddle, $arg_index) = @_;
 	# Make sure $piddle is a piddle
 	if (not defined $piddle) {
-		_my_barf("Expected a piddle but got undef.", $arg_count);
+		_my_barf("Expected a piddle but got undef.", $arg_index);
 	}
 	elsif (ref ($piddle) !~ /PDL/) {
-		_my_barf("Expected a piddle but got something else.", $arg_count);
+		_my_barf("Expected a piddle but got something else.", $arg_index);
 	}
 	# Make sure the dimensions are compatible
 	eval { cat($data, $piddle) };
 	if ($@) {
-		_my_barf("Piddle has incompatible dimensions.", $arg_count);
+		_my_barf("Piddle has incompatible dimensions.", $arg_index);
 	}
 }
 
@@ -503,7 +504,7 @@ arrow operator, even if the 'first' argument is the piddle you meant:
 Other errors typically begin with:
 
  PDL: incorrect usage of function PDL::Fit::Householder
- Error with argument $arg_count: <short-message>
+ Error with argument $arg_index: <short-message>
  <Long-Message>
 
 I hope that the messages are self-explnatory.  If they give you trouble,
