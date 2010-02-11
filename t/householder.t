@@ -35,15 +35,11 @@ throws_ok { $coefs = $data->Householder(2) } qr/scalar as last argument/,
 	'needs more than one argument';
 like($@, qr/last argument/, 'Error was with last argument');
 
-throws_ok { $coefs = $data->Householder(2, undef) } qr/got undef/,
-	'undef is not a valid dependent piddle';
-like($@, qr/last argument/, 'Error was with last argument');
-
 throws_ok { $coefs = $data->Householder($t, 2) } qr/scalar as last argument/,
 	'polynomial order cannot be the last argument';
-like($@, qr/argument 2/, 'Error was with last argument');
+like($@, qr/last argument/, 'Error was with last argument');
 
-throws_ok { $coefs = $data->Householder(2, 1) } qr/got something else/,
+throws_ok { $coefs = $data->Householder(2, 1) } qr/scalar as last argument/,
 	'scalar is not a valid dependent piddle';
 like($@, qr/last argument/, 'Error was with last argument');
 
@@ -67,34 +63,33 @@ like($@, qr/argument 1/, 'Error was with first argument');
 # Check function processing
 note('Anonymous functions and function reference errors');
 
-throws_ok { $coefs = $data->Householder(\&sin) } qr/got undef/,
+sub my_sin { return $_[0]->sin() }
+
+throws_ok { $coefs = $data->Householder(\&my_sin) } qr/function reference as last argument/,
 	'needs more than one argument';
 like($@, qr/last argument/, 'Error was with last argument');
 
-throws_ok { $coefs = $data->Householder(\&sin, undef) } qr/got undef/,
-	'undef is not a valid dependent piddle';
+throws_ok { $coefs = $data->Householder($t, \&PDL::sin) } qr/function reference as last argument/,
+	'function reference cannot be the last argument';
 like($@, qr/last argument/, 'Error was with last argument');
 
-throws_ok { $coefs = $data->Householder($t, \&sin) } qr/reference as last argument/,
-	'function reference cannot be the last argument';
-like($@, qr/argument 2/, 'Error was with second argument');
-
-throws_ok { $coefs = $data->Householder(\&sin, 1) } qr/got something else/,
+throws_ok { $coefs = $data->Householder(\&PDL::sin, 1) } qr/scalar as last argument/,
 	'scalar is not a valid dependent piddle';
 like($@, qr/last argument/, 'Error was with last argument');
 
-throws_ok { $coefs = $data->Householder(\&sin, \&cos, $bad_t ) }
-	/incompatible dimensions/, 'all piddles must have compatible dimensions';
+throws_ok { $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, $bad_t ) }
+	qr/incompatible dimensions/, 'all piddles must have compatible dimensions';
 like($@, qr/last argument/, 'Error was with last argument');
 
 my $dying_func = sub { die "I'm outa here!" };
-throws_ok { $coefs = $data->Householder(\&sin, $dying_func, $t) } qr/process piddles/,
+throws_ok { $coefs = $data->Householder(\&PDL::sin, $dying_func, $t) }
+	qr/Function reference must be able to process piddles/,
 	'must not die when processing piddles';
 like($@, qr/argument 2/, 'Error was with second argument');
 
 my $weird_func = sub { return $bad_t };
-throws_ok { $coefs = $data->Householder(\&sin, \&cos, $weird_func, $t) }
-	/return .* compatible/, 'must return compatible dimensions';
+throws_ok { $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, $weird_func, $t) }
+	qr/return .* compatible/, 'must return compatible dimensions';
 like($@, qr/argument 3/, 'error was with third argument');
 
 
@@ -102,31 +97,31 @@ like($@, qr/argument 3/, 'error was with third argument');
 note('Arbitrary piddle arguments and their errors');
 
 throws_ok { $coefs = $data->Householder(sin($bad_t), $t, $bad_t) }
-	/incompatible dimensions/, 'must supply compatible piddles';
+	qr/incompatible dimensions/, 'must supply compatible piddles';
 like($@, qr/argument 1/, 'Error was with the first argument');
 
 throws_ok { $coefs = $data->Householder(sin($t), $t, $bad_t) }
-	/incompatible dimensions/, 'must supply compatible piddles, round 2';
+	qr/incompatible dimensions/, 'must supply compatible piddles, round 2';
 like($@, qr/argument 3/, 'Error was with the third argument');
 
 
 # Check other errors
 note('Other input errors');
-throws_ok { $coefs = $data->Householder($t**2, \&sin, undef, $t) }
-	/Must be/, 'undef is not a valid argument';
-like($@, qr/argument 3/, 'Error was with the third argument');
-
-throws_ok { $coefs = $data->Householder($t**2, [$t], \&sin, $t) }
-	/Must be/, 'an anonymous array is not a valid argument';
+throws_ok { $coefs = $data->Householder($t**2, \&PDL::sin, $t, [$t]) }
+	qr/Expected a piddle but got something else/, 'an anonymous array is not a valid argument';
 like($@, qr/argument 2/, 'Error was with the second argument');
 
-throws_ok { $coefs = $data->Householder({}, $t**2, \&sin, $t) }
-	/Must be/, 'an anonymous hash is not a valid argument';
+throws_ok { $coefs = $data->Householder($t**2, [$t], \&PDL::sin, $t) }
+	qr/Must be/, 'an anonymous array is not a valid argument';
+like($@, qr/argument 2/, 'Error was with the second argument');
+
+throws_ok { $coefs = $data->Householder({}, $t**2, \&PDL::sin, $t) }
+	qr/Must be/, 'an anonymous hash is not a valid argument';
 like($@, qr/argument 1/, 'Error was with the first argument');
 
 
 # Check that pdl(1) works in creating a piddle of constants
-
+# Check undef handling with and without warnings enabled
 
 # 2) check _check_piddle to make sure it works right
 # 3) check that _backsub works correctly by constructing a matrix and y,
