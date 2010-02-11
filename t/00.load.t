@@ -4,6 +4,6 @@ BEGIN {
 use_ok( 'PDL::Fit::Householder' );
 }
 
-diag( "Testing PDL::Fit::Householder $PDL::Fit::Householder::VERSION" );
+note( "Testing PDL::Fit::Householder $PDL::Fit::Householder::VERSION" );
 
 

@@ -17,8 +17,10 @@ my $builder = Module::Build::PDL->new
         'PDL'        => 0,
     },
     build_requires => {
-        'Test::More' => 0,
-    	'Test::Exception' => 0,
+        'Test::More'       => 0,
+    	'Test::Exception'  => 0,
+    	'Test::Warn'       => 0,
+    	'Test::LectroTest' => 0,
     },
     add_to_cleanup      => [ 'PDL-Fit-Householder-*' ],
 

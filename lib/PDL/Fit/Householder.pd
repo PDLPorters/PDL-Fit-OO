@@ -157,14 +157,14 @@ sub Householder {
 	my @original_index_for = ('');
 	my $i = 0;
 	my $arg_index = 1;
-	(5, undef, 'hello', undef, '5);
+
 	while ($i < @args) {
 		if (defined $args[$i]) {
 			$i++;
 			push @original_index_for, $arg_index;
 		}
 		else {
-			@args = splice (@args, $i, 1);
+			splice (@args, $i, 1);
 			carp("Argument $arg_index was undefined in call to Householder")
 				if $WARN_ON_UNDEF;
 		}
@@ -176,18 +176,19 @@ sub Householder {
 	
 	# The last argument can never be a scalar or a code reference:
 	if(ref ($args[-1]) eq '') {
-		_my_barf("scalar as last argument\n"
+		_my_barf("scalar as last defined argument\n"
 		."The presence of a scalar among your arguments means that you intend to\n"
 		."perform a polynomial fit.  However, the dependent variable is assumed\n"
 		."to be the last item in your list, so you cannot indicate the order of\n"
-		."your fit with your last argument.", -1);
+		."your fit with your final argument.", $original_index_for[-1]);
 	}
 	elsif(ref ($args[-1]) =~ /CODE/) {
-		_my_barf("function reference as last argument\n"
+		_my_barf("function reference as last defined argument\n"
 		."The presence of a function reference among your arguments means that\n"
 		."you intend to fit your data to the supplied function.  However, the\n"
 		."dependent variable is assumed to be the last item in your list, so you\n"
-		."cannot supply an anonymous function as your last argument.", -1);
+		."cannot supply an anonymous function as your final argument."
+		, $original_index_for[-1]);
 	}
 	
 	my ($t, $poly_order, @stuff_to_fit);
@@ -229,7 +230,7 @@ sub Householder {
 			# Get the time from the end of @args
 			unless (defined $t) {
 				$t = pop @args;
-				_check_piddle($data, $t, -1);
+				_check_piddle($data, $t, $original_index_for[-1]);
 			}
 		}
 
@@ -251,7 +252,7 @@ sub Householder {
 			# Get the time from the end of @args
 			unless (defined $t) {
 				$t = pop @args;
-				_check_piddle($data, $t, -1);
+				_check_piddle($data, $t, $original_index_for[-1]);
 			}
 		}
 
@@ -281,11 +282,11 @@ sub Householder {
 			push @piddles_to_fit, $_;
 		}
 	}
-	my $A = cat(@stuff_to_fit)->transpose;
+	my $A = cat(@piddles_to_fit)->transpose;
 	my $y = $data->copy->dummy(0);
 
 	$y->_Householder($A);
-	my $coefs = $y->_backsub($A);
+	my $coefs = $y->_backsub($A)->squeeze;
 	
 	# Eventually return coefficients, residual, method, etc if requested
 	return $coefs if (defined wantarray and not wantarray);
@@ -303,9 +304,7 @@ sub Householder {
 sub _my_barf {
 	my ($message, $arg_index) = @_;
 	$message = "incorrect usage of function PDL::Fit::Householder\n"
-		."Error with "
-		. ($arg_index == -1 ? 'last argument' : "argument $arg_index")
-		.': '. $message;
+		."Error with argument $arg_index: $message";
 	barf($message);
 }
 
@@ -475,6 +474,23 @@ BACKSUB_DOC
 );
 
 
+pp_addpm(<<'DEBUG_FUNCTIONS');
+
+=head2 PDL::Fit::Householder::warn_on_undef
+=head2 PDL::Fit::Householder::no_warn_on_undef
+
+Determines whether or not warnings are given when you supply an
+undefined value to the Householder function.  Warnings are on by
+default.
+
+=cut
+
+sub warn_on_undef {	$WARN_ON_UNDEF = 1 }
+sub no_warn_on_undef { $WARN_ON_UNDEF = 0 }
+
+DEBUG_FUNCTIONS
+
+
 pp_addpm({At => 'Bot'}, <<'FINAL_DOCUMENTATION');
 
 =head1 DIAGNOSTICS
@@ -514,60 +530,101 @@ your error in more detail:
 =over
 
 
-=item Expected piddle but got undef
-=item Expected a piddle but got something else
+=item * Expected piddle but got undef
 
-You inadvertenly supplied an undefined value or a non-piddle where
+You should never get this error due to the way that the
+function processes undefined values.  If you do, please report this as
+a bug and submit the code that caused it.
+
+=item * Expected a piddle but got something else
+
+You inadvertenly supplied a non-piddle where
 C<PDL::Fit::Householder> was expecting a piddle.  This can pretty much
-only happen when you have a strange value at the end of your argument
-list, or if you want to fit your data to a single function and you
-forget to supply the dependent variable.
+only happen when you are doing a polynomial and/or function fit and you
+inadvertently have a strange value at the end of your argument list.
+For example, if you pass your dependent variable in an anonymous array
+or an array reference, you'll get this error.  Here's a second-order
+polynomial fit that would cause this error:
 
-=item function reference as last argument
+ $coefs = $data->Householder(2, [$t]);  # BAD - don't wrap anything in []
 
-The explanation pretty much coveres it.  Here's an example in which you
-try to fit your data to a home-spun sequence as well as a function:
+=item * function reference as last defined argument
 
- $coefs = $data->Householder($sequence1, $t, \&sin);  # BAD
- $coefs = $data->Householder($sequence1, \&sin, $t);  # GOOD
+You got this error either because you put the dependent variable in the
+wrong place (it should always be the last argument) or your dependent
+variable is inadvertently undefined (in which case you should also get
+a warning about its undefinedness).
 
-Remember: if you specify function references or anonymous functions,
-you should always end your argument list with the dependent variable.
+ # out-of-order (assumes that $t is defined):
+ $coefs = $data->Householder($sequence1, $t, \&PDL::sin);  # BAD
+ $coefs = $data->Householder($sequence1, \&PDL::sin, $t);  # GOOD
+ 
+ # undefined dependent variable
+ my $t;
+ $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, $t);
 
-=item Function reference must be able to process piddles
+=item * Function reference must be able to process piddles
 
 The function that you passed to C<PDL::Fit::Householder> choked on a
-piddle.  This is unlikely but pretty serious.  Double-check that you've
-got the right function reference!
+piddle.  The likeliest problem here is that you tried to use a Perl
+stock function, like C<sin> or C<cos>.  PDL overrides these functions,
+and you must explicitly name them:
 
-=item Function reference must return a piddle with dimensions compatible
+ $coefs = $data->Householder(\&sin, \&cos, $t);            # BAD
+ $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, $t);  # GOOD
+
+Of course, this problem could crop-up with your own functions that croak
+when something bad happens.  For example, if your function expects more
+than one argument, and dies if it doesn't get what it wants, you would
+get this error.  All function references should work when they are given
+only a single piddle argument to chew on.
+
+=item * Function reference must return a piddle with dimensions compatible
 to its input
 
 This error indicates that the anonymous function or function you passed
 by reference either does not return a piddle or returns a piddle whose
 dimensions are not compatible (in a PDL threading sense) with the
 input.  Put simply, your function should return a piddle with identical
-dimensions to those of the piddle supplied to it.
+dimensions to those of the piddle supplied to it.  You might have this
+error if your function returns a slice or if your function returns a
+pure number.
 
-=item multiple scalars
+=item * multiple scalars
 
 You should give at most one scalar in your list of arguments, and that
 one scalar represents the order of the polynomial you would like to fit
 to your data.  You will get this error if you inadvertently supply more
 than one scalar, which may indicate a mistaken function reference or
-piddle.  This could also happen if you supply a function name without
-a leading backslash, as in this:
+a piddle that somehow got collapsed to a scalar value.
 
- $coefs = $data->Householder(sin, cos, $t);      # BAD - must reference funcs
- $coefs = $data->Householder(\&sin, \&cos, $t);  # GOOD - properly referenced
+This could also happen if you make two mistakes: not properly
+referencing a function which is a Perl function that PDL overrides.
+First, you must properly reference your functions.  Second, you must
+fully qualify functions like C<sin> and C<cos> as C<PDL::sin> and
+C<PDL::cos>:
 
-=item Must be a scalar, function reference, or piddle
+ # BAD polynomial + sin fit:
+ $coefs = $data->Householder(2, sin, $t);
+ # STILL BAD polynomial + sin fit, though you'll get a different error
+ $coefs = $data->Householder(2, \&sin, $t);
+ # GOOD polynomial + sin fit:
+ $coefs = $data->Householder(2, \&PDL::sin, $t);
+ 
+ # BAD sin + cos fit:
+ $coefs = $data->Householder(sin, cos, $t);
+ # STILL BAD sin + cos fit, though you'll get a different error:
+ $coefs = $data->Householder(\&sin, \&cos, $t);
+ # GOOD sin + cos fit:
+ $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, $t);
+
+=item * Must be a scalar, function reference, or piddle
 
 The argument in question is not a scalar, function reference, or piddle.
 This could happen if you manage to pass an anonymous array or hash, or
 of you pass in an object.
 
-=item negative or non-integer order
+=item * negative or non-integer order
 
 At the moment, polynomial fits only expect non-negative integer orders.
 So if you provide a scalar for a polynomial fit, be sure it's an
@@ -577,23 +634,55 @@ integer:
  $coefs = $data->Householder(-3, $t);   # BAD - must be non-negative
  $coefs = $data->Householder(3, $t);    # GOOD - non-negative integer
 
-=item Piddle has incompatible dimensions
+This could also happen if you make the double-mistake of attempting to
+supply a fit function without properly escaping it.  For example, here
+you attempt to fit your data to a sine function, but you accidentally
+call it C<sin> instead of the proper C<\&PDL::sin>:
+
+ $_ = 2;
+ $coefs = $data->Householder(sin, $t);
+ # That call gets interpreted as
+ $coefs = $data->Householder(sin(2), $t);
+
+The resulting function call gets interpreted as a request for a
+polynomial fit with order C<sin(2)>.
+
+=item * Piddle has incompatible dimensions
 
 You properly supplied a piddle, but its dimensions are not compatible
 with your data's dimensions.  For example, C<sequence(3)> and
 C<sequence(5)> would give piddles with incompatible dimensions.
 
-=item scalar as last argument
+=item * scalar as last defined argument
 
-The explanation pretty much coveres it.  Here's an example in which you
-try to fit your data to a home-spun sequence as well as a second-order
-polynomial:
+You will get this warning in one of three circumstances.
 
- $coefs = $data->Householder($sequence1, $t, 2);  # BAD
- $coefs = $data->Householder($sequence1, 2, $t);  # GOOD
+The first case is that you want to perform a polynomial fit and you
+accidentally put the desired order of that fit at the end of your
+argument list.  Always put your dependent variable at the end of your
+argument list:
 
-Remember: if you specify polynomial fitting, you should always end your
-argument list with the dependent variable.
+ $coefs = $data->Householder($t, 2);  # BAD
+ $coefs = $data->Householder(2, $t);  # GOOD
+
+The second case that would give you this error is that your dependent
+variable is undefined and the second-to-last argument is the order of
+your desired polynomial fit.  For example:
+
+ $t;  # Oops, forgot to define $t...
+ $coefs = $data->Householder(2, $t);  # Error 
+
+The final case is that you not only supplied an undefined dependent
+variable, but you also inadvertently called a function instead of
+supplying its reference:
+
+ $t;  # Oops, forgot to define $t...
+ $coefs = $data->Householder(sin, $t);
+ # You meant to say this:
+ $coefs = $data->Householder(\&PDL::sin, $t);
+
+However, in the last line above, you will still get an error, but this
+time it will be that the last argument is a function reference.
 
 =back
 
