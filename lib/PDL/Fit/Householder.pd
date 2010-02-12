@@ -30,9 +30,33 @@ This document describes PDL::Fit::Householder version 0.0.1
 
 =head1 SYNOPSIS
 
+ use PDL;
  use PDL::Fit::Householder;
- # Assume that $x and $y have been loaded or computed elsewhere
+ my $t = sequence(1000) / 50;
  
+ # Polynomial fitting needs the order of the polynomial and the
+ # dependent variable:
+ my $data = 0.4 + 5 * $t - 2 * $t**2 + 0.1 * grandom($t);
+ my $coefs = $data->Householder(2, $t);
+ 
+ # Function fitting needs function references and the dependent variable
+ $data = 4 * sin($t) - 7 * cos($t) + 0.2 * exp($t) + 0.1 * grandom($t);
+ my $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, \&PDL::exp, $t);
+ 
+ # Arbitrary data fitting just needs the piddles of data:
+ $signal1 = 2 * sin($t) + 5 * cos($t);
+ $signal2 = $t**2 + grandom($t);
+ $data = 4 * $signal1 - 2 * $signal2;
+ $coefs = $data->Householder($signal1, $signal2);
+ 
+ # All together now!  Notice $t must be at the end:
+ $data = 3 * $signal1 - sin($t) + 2 - 7 * $t + grandom($t);
+ $coefs = $data->Householder($signal1, \&PDL::sin, 2, $t);
+
+For more working examples, try typing at your prompt (once you've
+installed this module):
+
+ perl -MPDL::Demos::Householder -e '1'
 
 =head1 DESCRIPTION
 
@@ -55,7 +79,106 @@ C<_backsub>.
 =head2 Polynomial Fitting
 
 I think polynomial fitting is the simplest use case, so I will start
-with it.  Suppose you have some data, C<$x>.
+with it.  Suppose you have some data, C<$data>, which you get from an
+experiment or something.  For now we'll simulate that experiment by
+creating the data with some noise:
+
+ use PDL::Fit::Householder;
+ my $t = sequence(1000) / 50;
+ my $data = 4 + 5 *$t - 2 * $t**2 + 0.1 * grandom($t);
+
+Now C<$data> is a quadratic function with some noise.  In order to get
+the coefficients, we perform a polynomial fit on the data, specifying
+the order of the polynomial fit (2 in this case) and supplying the
+time-stamp as the last argument.  (The time-stamp, when required, will
+always be the last argument.)  The code to do the fit would look
+something like this:
+
+ my $coefs = $data->Householder(2, $t);
+ print "Got coefficients $coefs\n";
+
+When I run this, I get 
+
+ perldl> p $coefs
+ [ 4.0054492  5.0012631 -2.0001335]
+
+You can fit your data to any order.  Simply specify the order you would
+like to fit.  For example, we can fit our quadratic data to a cubic
+polynomial and see what happens:
+
+ print $coefs = $data->Householder(3, $t);
+ [ 4.0177829  4.9938368 -1.9992038 -3.1020193e-05]
+
+=head2 Arbitrary Function Fitting
+
+Of course, scientists do not fit with just polynomials.  For example,
+let's generate some data involving sine and cosine:
+
+ my $data = 4 * sin($t) -2 * cos($t) + 0.1 * grandom($t);
+ my $coefs = $data->Householder(\&PDL::sin, \&PDL::cos, $t);
+ print "Got coefficients $coefs\n";
+ Got coefficients [   4.00606  -1.997549]
+
+You should notice two things.  First, I still need to supply a
+time-stamp for my data, C<$t>, and it must go at the end of the argument
+list.  Second, I cannot simply use C<sin> and C<cos>, but must qualify
+them as C<PDL::sin> and C<PDL::cos>.  You must do this for all built-in
+Perl functions that have a PDL override, most of which are discussed in
+(the latter part of) L<PDL::Ops>.
+
+You can use your own functions, too.  The only requirement is that when
+given a piddle, they return a piddle with compatible dimensions.  For
+example, suppose we wanted to include the function x^2.5:
+
+ sub super_quadratic {
+     my $values = shift;
+     return $values**2.5;
+ }
+ 
+ $data = 0.5 + 4 * $t - 2 * $t**2 + 7 * super_quadratic($t) + 0.1 * grandom($t);
+ $coefs = $data->Householder(2, \&super_quadratic, $t);
+ print $coefs;
+ [0.48483705  4.0066001 -2.0008957  7.0001342]
+
+=head2 Arbitrary Data Fitting
+
+You may also want to fit one set of experimental data in a linear fashion
+to another set of data.  Under these circumstances, you're trying to
+describe the data in one piddle as a linear combination of the data in
+other piddles.  Let's see an example of that:
+
+ my $signal1 = cos($t) + 0.1 * grandom($t);
+ my $signal2 = sin($t) + 0.1 * grandom($t);
+ my $data = 2.5 * $signal1 + 3.5 * $signal2 + 0.1 * grandom($t);
+ my $coefs = $data->Householder($signal1, $signal2);
+ print $coefs;
+ [ 2.4937939  3.5023191]
+
+Unlike the previous two examples, you don't need to supply a time stamp.
+Time stamps are only necessary when you are trying to fit your data to
+functions.
+
+=head2 Putting it all together
+
+Now we get to the cool part.  You can mix and match all of these just as
+long as you put a time-stamp piddle as the last argument.  Here's an
+example:
+
+ $signal1 = cos($t) + 0.1 * grandom($t);
+ $data = 3 * $signal1 - 0.3 + 2 * $t - 8.9 * $t**2 - 4 * sin($t) + 2 * cos($t) + 0.1 * grandom($t);
+ $coefs = $data->Householder($signal1, 2, \&PDL::sin, \&PDL::cos, $t);
+ print $coefs;
+ [ 3.0247638 -0.30865553    2.00082  -8.899994 -3.9973816  1.9726106]
+
+There's no reason to keep the original order, either (and if it's real
+data, there will be no such thing as 'original order').  Working with
+the exact same data, I get:
+
+ $coefs = $data->Householder(\&PDL::sin, $signal1, \&PDL::cos, 2, $t);
+ print $coefs;
+ [-3.9973816  3.0247638  1.9726106 -0.30865553    2.00082  -8.899994]
+
+which matches the results above, even though the order has changed.
 
 =cut
 INTRO_AND_DOCUMENTATION
@@ -478,6 +601,7 @@ BACKSUB_DOC
 pp_addpm(<<'DEBUG_FUNCTIONS');
 
 =head2 PDL::Fit::Householder::warn_on_undef
+
 =head2 PDL::Fit::Householder::no_warn_on_undef
 
 Determines whether or not warnings are given when you supply an
