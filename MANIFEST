@@ -1,7 +1,9 @@
-Build
+Build.PL
 Changes
+ignore.txt
 lib/PDL/Fit/Householder.pd
-MANIFEST
+MANIFEST			This list of files
+META.yml
 README
 t/00.load.t
 t/householder_args.t
@@ -9,4 +11,3 @@ t/householder_methods.t
 t/perlcritic.t
 t/pod-coverage.t
 t/pod.t
-META.yml

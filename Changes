@@ -3,3 +3,5 @@ Revision history for PDL-Fit-Solver
 0.0.1  Tue Jan 26 15:53:04 2010
        Initial release.
 
+0.0.2  Fri Feb 12 08:31    2010
+       Made distrubution with Build.PL instead of Build

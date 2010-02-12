@@ -8,7 +8,7 @@
 pp_addpm({At => Top}, <<'INTRO_AND_DOCUMENTATION');
 
 BEGIN { 
-$VERSION = '0.0.1'
+$VERSION = '0.0.2'
 };
 
 use strict;
@@ -26,7 +26,7 @@ Householder diagonalization technique.
 
 =head1 VERSION
 
-This document describes PDL::Fit::Householder version 0.0.1
+This document describes PDL::Fit::Householder version 0.0.2
 
 =head1 SYNOPSIS
 
@@ -52,11 +52,6 @@ This document describes PDL::Fit::Householder version 0.0.1
  # All together now!  Notice $t must be at the end:
  $data = 3 * $signal1 - sin($t) + 2 - 7 * $t + grandom($t);
  $coefs = $data->Householder($signal1, \&PDL::sin, 2, $t);
-
-For more working examples, try typing at your prompt (once you've
-installed this module):
-
- perl -MPDL::Demos::Householder -e '1'
 
 =head1 DESCRIPTION
 

@@ -1,4 +1,4 @@
-PDL-Fit-Solver version 0.0.1
+PDL-Fit-Solver version 0.0.2
 
 This module provides a pure-PDL linear fitting capability.  At
 the moment, the only other easily found linear fitting routines

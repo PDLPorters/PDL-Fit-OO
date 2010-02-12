@@ -7,4 +7,7 @@ lib/PDL/Fit/Householder.c
 lib/PDL/Fit/Householder.o
 lib/PDL/Fit/Householder.pm
 lib/PDL/Fit/Householder.xs
-MYMETA.yml
+*.yml
+*~
+*.bak
+PDL-Fit-Householder-*
