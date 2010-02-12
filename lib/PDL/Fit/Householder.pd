@@ -112,6 +112,7 @@ That also means that you must supply C<$t> if you have any function
 references.
 
 =item PIDDLE
+
 An arbitrary data set that you want to use in the fit.  All piddles
 must have dimensions compatible with C<$data> (and by extension, with
 C<$t>).
@@ -336,7 +337,7 @@ pp_add_exported('Householder');
 
 ############## PDL::PP Functions ##############
 
-=head2 C<_Householder>
+=head2 _Householder
 
 =cut
 
@@ -427,7 +428,7 @@ HOUSEHOLDER_DOC
 	},
 );
 
-=head2 C<_backsub>
+=head2 _backsub
 
 =cut
 
@@ -685,6 +686,18 @@ However, in the last line above, you will still get an error, but this
 time it will be that the last argument is a function reference.
 
 =back
+
+=head1 TODO
+
+The module does not provide any means for easily generating data from
+the fits, nor does it provide any measure for how well or poorly the
+fit describes the data.
+
+I would like to add other methods and provide a way to indicate the
+desired method when you call a general function C<fit>.
+
+Extend the module so that it can detect other implementations, like GSL
+or Slatec bindings, and offer the same interface to them.
 
 =head1 AUTHOR
 

@@ -1,0 +1,14 @@
+Build.PL
+ignore.txt
+lib/PDL/Fit/Householder.c
+lib/PDL/Fit/Householder.o
+lib/PDL/Fit/Householder.pm
+lib/PDL/Fit/Householder.xs
+lib/PDL/Fit/Solver.pm
+notes/notes.pod
+notes/Solver.pm
+blib/.*
+^MYMETA.yml$
+^\.git.*
+^\_build*
+^MANIFEST\..*
