@@ -1,19 +1,16 @@
 PDL-Fit-Solver version 0.0.1
 
-[ REPLACE THIS...
+This module provides a pure-PDL linear fitting capability.  At
+the moment, the only other easily found linear fitting routines
+for PDL require Slatec.  There may also be bindings for GSL in
+this arena, but I did not find them.
 
-  The README is used to introduce the module and provide instructions on
-  how to install the module, any machine dependencies it may have (for
-  example C compilers and installed libraries) and any other information
-  that should be understood before the module is installed.
-
-  A README file is required for CPAN modules since CPAN extracts the
-  README file from a module distribution so that people browsing the
-  archive can use it get an idea of the modules uses. It is usually a
-  good idea to provide version information here so that people can
-  decide whether fixes for the module are worth downloading.
-]
-
+This module implements the Householder orthogonalization method
+to solve an overspecified system, that is, to perform a linear fit.
+The module can fit any combination of a polynomial, funcion
+references, and raw data to a dataset.  The hard-working code
+is written in PDL::PP, while the hopefully straightforward front-end
+is written in Perl.
 
 INSTALLATION
 
@@ -32,7 +29,7 @@ PDL
 
 BUILD DEPENDENCIES
 
-Module::Build::PDL, Test::More, Test::Excpetions
+Module::Build::PDL, Test::More, Test::Excpetion, Test::LectroTest
 
 
 COPYRIGHT AND LICENCE
