@@ -8,12 +8,11 @@ my $builder = Module::Build::PDL->new
 	config_requires => {
 		'Module::Build::PDL'  => 0,
 	},
-    module_name         => 'PDL::Fit::Householder',
+    dist_name           => 'PDL-Fit-Householder',
+    dist_version_from   => 'lib/PDL/Fit/Householder.pd',
     license             => 'perl',
     dist_author         => 'David Mertens <mertens2@illinois.edu>',
-    dist_version_from   => 'lib/PDL/Fit/Householder.pd',
     requires => {
-        'version'    => 0,
         'PDL'        => 0,
     },
     build_requires => {
