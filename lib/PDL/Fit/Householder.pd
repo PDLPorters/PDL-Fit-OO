@@ -199,7 +199,7 @@ pp_addpm({At => 'Middle'}, <<'HOUSEHOLDER');
 Fits your supplied data to a polynomial, collection of functions,
 or collection of piddles.
 
-Here a basic usage summary:
+Here is a basic usage summary:
 
 =for usage
 
@@ -295,14 +295,14 @@ sub Householder {
 	
 	# The last argument can never be a scalar or a code reference:
 	if(ref ($args[-1]) eq '') {
-		_my_barf("scalar as last defined argument\n"
+		_my_barf('householder', "scalar as last defined argument\n"
 		."The presence of a scalar among your arguments means that you intend to\n"
 		."perform a polynomial fit.  However, the dependent variable is assumed\n"
 		."to be the last item in your list, so you cannot indicate the order of\n"
 		."your fit with your final argument.", $original_index_for[-1]);
 	}
 	elsif(ref ($args[-1]) =~ /CODE/) {
-		_my_barf("function reference as last defined argument\n"
+		_my_barf('householder', "function reference as last defined argument\n"
 		."The presence of a function reference among your arguments means that\n"
 		."you intend to fit your data to the supplied function.  However, the\n"
 		."dependent variable is assumed to be the last item in your list, so you\n"
@@ -321,7 +321,7 @@ sub Householder {
 		if (not ref $arg) {
 			# Make sure we've not already set up a polynomial fit:
 			if (defined $poly_order) {
-				_my_barf("multiple scalars\n"
+				_my_barf('householder', "multiple scalars\n"
 				."When you supply a scalar to the fit, you indicate that you want to perform\n"
 				."a linear fit of the given order, but you seem to have supplied two scalars."
 				, $original_index_for[$arg_index]);
@@ -331,7 +331,7 @@ sub Householder {
 			$poly_order = +$arg;
 			(my $digits) = ($arg =~ /(\d+)/);
 			if ($poly_order != $digits) {
-				_my_barf("negative or non-integer order\n"
+				_my_barf('householder', "negative or non-integer order\n"
 				."When you supply a scalar to the fit, you indicate that you want to perform\n"
 				."a linear fit of the given order.  For the current implementation, the\n"
 				."order must be an integer greater than or equal to zero.  For negative\n"
@@ -349,7 +349,7 @@ sub Householder {
 			# Get the time from the end of @args
 			unless (defined $t) {
 				$t = pop @args;
-				_check_piddle($data, $t, $original_index_for[-1]);
+				_check_piddle('householder', $data, $t, $original_index_for[-1]);
 			}
 		}
 
@@ -359,31 +359,31 @@ sub Householder {
 			my $results;
 			eval { $results = &$arg($data) };
 			if ($@) {
-				_my_barf("Function reference must be able to process piddles."
+				_my_barf('householder', "Function reference must be able to process piddles."
 					, $original_index_for[$arg_index]);
 			}
 			eval { cat($results, $data) };
 			if ($@) {
-				_my_barf("\nFunction reference must return a piddle with dimensions compatible to its input"
+				_my_barf('householder', "\nFunction reference must return a piddle with dimensions compatible to its input"
 					, $original_index_for[$arg_index]);
 			}
 
 			# Get the time from the end of @args
 			unless (defined $t) {
 				$t = pop @args;
-				_check_piddle($data, $t, $original_index_for[-1]);
+				_check_piddle('householder', $data, $t, $original_index_for[-1]);
 			}
 		}
 
 		# Next check for a piddle reference
 		elsif (ref ($arg) =~ /PDL/) {
-			_check_piddle($data, $arg, $original_index_for[$arg_index]);
+			_check_piddle('householder', $data, $arg, $original_index_for[$arg_index]);
 			push @stuff_to_fit, $arg;
 		}
 		
 		# They've exhausted their options, so barf:
 		else {
-			_my_barf("Must be a scalar, function reference, or piddle."
+			_my_barf('householder', "Must be a scalar, function reference, or piddle."
 				, $original_index_for[$arg_index]);
 		}
 	}
@@ -420,28 +420,39 @@ sub Householder {
 	
 }
 
-sub _my_barf {
+sub _func_from_fit_barf {
 	my ($message, $arg_index) = @_;
-	$message = "incorrect usage of function PDL::Fit::Householder\n"
+	$message = "incorrect usage of function_from_fit\n"
 		."Error with argument $arg_index: $message";
+	barf($message);
+}
+
+sub _my_barf {
+	my ($caller, $message, $arg_index) = @_;
+	$message = 'incorrect usage of function ';
+	#            If caller matches...        # refer to as ...
+	$message .= ($caller =~ /householder/)	? 'PDL::Fit::Householder'
+											: 'function_from_fit';
+
+	$message .= "\nError with argument $arg_index: $message";
 	barf($message);
 }
 
 # Utility function that makes sure the supplied $t piddle is good.
 # Barfs if it finds trouble.
 sub _check_piddle {
-	my ($data, $piddle, $arg_index) = @_;
+	my ($caller, $data, $piddle, $arg_index) = @_;
 	# Make sure $piddle is a piddle
 	if (not defined $piddle) {
-		_my_barf("Expected a piddle but got undef.", $arg_index);
+		_my_barf($caller, "Expected a piddle but got undef.", $arg_index);
 	}
 	elsif (ref ($piddle) !~ /PDL/) {
-		_my_barf("Expected a piddle but got something else.", $arg_index);
+		_my_barf($caller, "Expected a piddle but got something else.", $arg_index);
 	}
 	# Make sure the dimensions are compatible
 	eval { cat($data, $piddle) };
 	if ($@) {
-		_my_barf("Piddle has incompatible dimensions.", $arg_index);
+		_my_barf($caller, "Piddle has incompatible dimensions.", $arg_index);
 	}
 }
 
@@ -452,6 +463,161 @@ HOUSEHOLDER
 
 pp_add_exported('Householder');
 
+pp_addpm({At => 'Middle'}, <<'FUNCTION_FROM_REF');
+
+=begin under_consruction
+
+=head2 function_from_fit
+
+=for ref
+
+Returns a function that you can evaluate for any value of the dependent
+variable within the range of the original fit.
+
+Here is a basic usage summary:
+
+=for usage
+
+ $func_ref = function_from_fit($coefs, [ORDER], FUNCREF|PIDDLE, FUNCREF|PIDDLE, ..., $t)
+
+
+=cut
+
+sub function_from_fit {
+	my @args = @_;
+
+	# Working here - my TODO list
+	# Make this process undefs the same way Householder does
+	# Change the argument passing to use key/value pairs
+	# Document all of the error messages
+	
+	# Croak in void context
+	barf("Usage: function_from_fit") if (not defined wantarray);
+	
+	# We need at least three arguments:
+	barf("Usage: function_from_fit") if ($#args < 2);
+	
+	# Strip out undefs from the args list while mapping the new list to
+	# the original:
+	my @original_index_for;
+	my $i = 0;
+	my $arg_index = 0;
+
+	while ($i < @args) {
+		if (defined $args[$i]) {
+			$i++;
+			push @original_index_for, $arg_index;
+		}
+		else {
+			splice (@args, $i, 1);
+			carp("Argument $arg_index was undefined in call to function_from_fit")
+				if $WARN_ON_UNDEF;
+		}
+		$arg_index++;
+	}
+	
+	# We need at least one argument after $data:
+	barf("Usage: Householder") if (@args < 1);
+	
+	# First get the coefficients (first arg) and the dependent variable
+	# (last arg)
+	my $coefs = $args[0];
+	my $t = $args[$#args];
+	
+	# Coefs should be a piddle or a scalar (a useful edge condition
+	# when the fit was performed to a single function):
+	if (not defined ($coefs) or ref ($coefs) and ref ($coefs) !~ /PDL/) {
+		# working here - doc this
+		_my_barf('func', "first argument - the fit coefficients - must be a scalar or piddle", 0);
+	}
+	
+			
+#	# Check that the dependent and raw-piddle dimensions agree
+#	_check_piddle('func', $data, $t, $#args]);
+
+	# $t must be a piddle
+	unless (ref ($t) and ref ($coefs) =~ /PDL/) {
+		# working here - doc this
+		_my_barf('func', "last argument must be a piddle containing the dependent variable"
+			, $#_);
+	}
+	
+	# 
+	my ($poly_order, @stuff_to_fit);
+	
+	ARGUMENT: for my $arg_index (2 .. $#args-1) {
+		my $arg = $args[$arg_index];
+		# First see if we've got a scalar:
+		if (not ref $arg) {
+			# Make sure we've not already set up a polynomial fit:
+			if (defined $poly_order) {
+				_my_barf('func', "multiple scalars\n"
+				."When you supply a scalar to the fit, you indicate that you want to perform\n"
+				."a linear fit of the given order, but you seem to have supplied two scalars."
+				, $original_index_for[$arg_index]);
+			}
+
+			# save the polynomial order and make sure it's valid:
+			$poly_order = +$arg;
+			(my $digits) = ($arg =~ /(\d+)/);
+			if ($poly_order != $digits) {
+				_my_barf('func', "negative or non-integer order\n"
+				."When you supply a scalar to the fit, you indicate that you want to perform\n"
+				."a linear fit of the given order.  For the current implementation, the\n"
+				."order must be an integer greater than or equal to zero.  For negative\n"
+				."or non-integer exponents, use an anonymous sub with the desired exponent:\n"
+				.'  $data->Householder(3, sub {$_[0]**(-2.3)}, $t);'."\n"
+				."That will fit your data to a third-order polynomial and t^-2.3"
+				, $original_index_for[$arg_index]);
+			}
+			
+			# Add polynomial orders to @stuff_to_fit in ascending order
+			for (my $i = 0; $i <= $poly_order; $i++) {
+				push (@stuff_to_fit, $i);
+			}
+		}
+
+		# Next check for a code reference
+		elsif (ref ($arg) =~ /CODE/) {
+			push @stuff_to_fit, $arg;
+			my $results;
+			eval { $results = &$arg($t) };
+			if ($@) {
+				_my_barf('func', "Function reference must be able to process piddles."
+					, $original_index_for[$arg_index]);
+			}
+			eval { cat($results, $t) };
+			if ($@) {
+				_my_barf('func', "\nFunction reference must return a piddle with dimensions compatible with the dependent variable"
+					, $original_index_for[$arg_index]);
+			}
+		}
+
+		# Next check for a piddle reference
+		elsif (ref ($arg) =~ /PDL/) {
+			_check_piddle('func', $t, $arg, $original_index_for[$arg_index]);
+			push @stuff_to_fit, $arg;
+		}
+		
+		# They've exhausted their options, so barf:
+		else {
+			_my_barf('func', "Must be a scalar, function reference, or piddle."
+				, $original_index_for[$arg_index]);
+		}
+	}
+	
+	# Double-check that the number of coefficients and the number of
+	# things to fit are the same
+	unless ($coefs->nelem == $#args - 1) {
+		# working here - doc this
+		_my_barf('func', "coefficient-argument mismatch\n"
+					. "
+	}
+}
+
+=end under_consruction
+
+FUNCTION_FROM_REF
 
 ############## PDL::PP Functions ##############
 
@@ -817,6 +983,15 @@ desired method when you call a general function C<fit>.
 
 Extend the module so that it can detect other implementations, like GSL
 or Slatec bindings, and offer the same interface to them.
+
+I'm thinking I should change the argument specification to something like
+ 
+  Householder(poly_order => SCALAR,
+    piddle => PIDDLE | piddles => [PIDDLE, PIDDLE, ...]
+    function => FUNCREF | functionss => [FUNCREF, FUNCREF, ...],
+    dep_var => PIDDLE | t => PIDDLE)
+ 
+ Then I would allow arbitrary ordering of paired arguments.   
 
 =head1 AUTHOR
 
