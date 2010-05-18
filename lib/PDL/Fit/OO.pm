@@ -2,19 +2,92 @@
 # scheme, and allows for weights.
 
 # Use exporter stuff eventually.
+# Working here - document this and write tests
 
-use PDL;
-use PDL::Fit::Householder;
 use strict;
 use warnings;
 use Carp qw(carp);
 use PDL::Core ':Internal';
 
+package PDL::Fit::OO;
+
+# Builds a Fit object
+sub new {
+	my $class = shift;
+	return bless shift;
+}
+
+sub get_coefs {
+	return $_[0]->{coefs};
+}
+
+sub get_fit_func {
+	my $this = shift;
+	return sub { $this->eval_at(@_); }
+}
+
+sub get_method {
+	my $this = shift;
+	return $this->method;
+}
+
+sub eval_at {
+	# Arguments - the object and the desired times
+	my $this = shift;
+	my $time = shift;
+
+	# piddlify the incoming arg and set up the answer piddle
+	my $m_time = topdl($time);
+	my $to_return = zeroes($m_time);
+
+	# Extract some useful values from the fit object
+	my $coefs = $this->coefs;
+	my $t = $this->{timestamp};
+	
+	my $i = 0;
+	foreach (@{$this->{system}}) {
+		if (ref eq '') {
+			# It's a polynomial power, so evaluate 
+			# current power (and increment that power)
+			$to_return += $coefs->at($i) * $m_time**$_;
+		}
+		elsif (ref =~ /PDL/) {
+			# It's a piddle, so interpolate
+			my ($to_add) = $m_time->interpolate($t, $_);
+			$to_return += $to_add * $coefs->at($i);
+		}
+		elsif (ref =~ /CODE/) {
+			# It's a function, so evaluate it:
+			$to_return += &$_($m_time) * $coefs->at($i);
+		}
+		$i++;
+	}
+	
+	# Return a real scalar if they gave us a scalar
+	return $to_return->at(0) if (ref($time) eq '');
+	# Otherwise return the piddle
+	return $to_return;
+}
+
+
+
+use PDL::Fit::Householder;
+
 sub PDL::fit {
 	my $data = shift;
 	
-	# Get the args and be sure we have an even number of them.
+	# Get the args
 	my ($stuff_to_fit, $t, $weights) = _process_args(@_);
+	
+	# Make sure they passed something to fit
+	barf("You didn't pass anything to fit!") unless @$stuff_to_fit;
+
+	# Make sure that if functions or polynomial fits are being performed
+	# that we have a dependent variable
+	if (grep {ref eq '' or ref eq 'CODE'} @$stuff_to_fit) {
+		barf("You must specify a dependent variable for function and polynomial fitting")
+			unless defined $t;
+	}
 	
 	# Set default weights to 1
 	$weights = pdl(1) unless defined $weights;
@@ -32,24 +105,24 @@ sub PDL::fit {
 			push @piddles_to_fit, $_;
 		}
 	}
-	my $A = cat(@piddles_to_fit)->transpose / $weights->transpose;
-	my $y = $data->copy->dummy(0) / $weights;
+	my $A = cat(@piddles_to_fit)->transpose * $weights->transpose;
+	my $y = $data->copy->dummy(0) * $weights->transpose;
 
 	# Perform the fit
 	$y->_Householder($A);
 	my $coefs = $y->_backsub($A)->squeeze;
 	
 	# Eventually return coefficients, residual, method, etc if requested
-	return $coefs if (defined wantarray and not wantarray);
 	my ($residual);
-	return (
-		coefs => $coefs,
-		residual => $residual,
-		method => 'Householder',
-		diagonalized_matrix => $A,
-		manipulated_results => $y,
-	) if (wantarray);
-
+	return PDL::Fit::OO->new(
+			coefs => $coefs,
+			timestamp => $t,
+			system => $stuff_to_fit,
+			residual => $residual,
+			method => 'Householder',
+			diagonalized_matrix => $A,
+			manipulated_results => $y,
+		);
 }
 
 sub _process_args {
@@ -120,7 +193,6 @@ sub _process_args {
 		}
 	}
 	
-	
 	# Run through the key/value pairs
 	ARGUMENT: for(my $i = 0; $i < @args; $i += 2) {
 		my ($key, $value) = @args[$i, $i+1];
@@ -135,10 +207,6 @@ sub _process_args {
 			barf("Polynomial order $value may not be a non-negative integer")
 				unless $value == int $value and $value >= 0;
 			
-			# Check that we have a dependent variable specified
-			barf("Fitting to a polynomial requires a dependent variable")
-				unless defined $t;
-
 			push @stuff_to_fit, $_ foreach (0 .. $value);
 			
 			next ARGUMENT;
@@ -191,10 +259,6 @@ sub _process_args {
 		
 		# Check for function references
 		elsif (/^func/) {
-			# Make sure we have a dependent variale
-			barf("Fitting to functions requires a dependent variable")
-				unless defined $t;
-			
 			my @funcs;
 			if (ref ($value) eq 'CODE') {
 				@funcs = ($value);
@@ -220,8 +284,8 @@ sub _process_args {
 				
 				# Check that the function gives results with dimensions
 				# that are compatible with $t
-				eval { my $a = $dim_check_piddle + &$func($t) };
-				barf("Function $i outputs a piddle with dimensions that are incompatible with the dependent variale or weights")
+				eval { my $a = sequence(2,3,4) + &$func(sequence(2,3,4)) };
+				barf("Function $i generates output that is not compatible with input")
 					if ($@);
 			}
 			
@@ -231,64 +295,89 @@ sub _process_args {
 			next ARGUMENT;
 		}
 		
+		# Check for fit-system, in which case we check that it's an array
+		# ref but otherwise assume it's correct and let it override
+		# anything else.
+		elsif (/^fit_system$/) {
+			barf("fit systems must be array references")
+				unless ref ($value) eq 'ARRAY';
+
+			@stuff_to_fit = @$value;
+			last ARGUMENT;
+		}
+		
 		# Warn on unknown options
 		else {
-			carp ("PDL::Fi: Unknown option $_; ignoring");
+			carp ("PDL::Fit: Unknown option $_; ignoring");
 		}
 	}
-	
-	barf("You didn't pass anything to fit!") unless @stuff_to_fit;
 
 	return (\@stuff_to_fit, $t, $weights);
 }
 
-sub PDL::function_from_fit {
-	my $coefs = shift;
-
-	# Get the args
-	my ($stuff_to_fit, $t) = _process_args(@_);
-	
-	# If they passed in piddles for me to interpolate, I need the
-	# dependent variable
-	if (grep {ref =~ /PDL/} @$stuff_to_fit) {
-		barf("You must specify a dependent variable for function_from_fit")
-			unless defined $t;
-	}
-	
-	# Return a function that does the interpolation:
-	return sub {
-		my $time = shift;
-		my $poly_power = 0;
-		my $to_return = zeroes(topdl($time));
-		
-		my $i = 0;
-		foreach (@$stuff_to_fit) {
-			if (ref eq '') {
-				# It's a polynomial power, so evaluate 
-				# current power (and increment that power)
-				$to_return += $coefs->at($i) * $time**$_;
-			}
-			elsif (ref =~ /PDL/) {
-				# It's a piddle, so interpolate
-				my ($to_add) = $time->interpolate($t, $_);
-				$to_return += $to_add * $coefs->at($i);
-			}
-			elsif (ref =~ /CODE/) {
-				# It's a function, so evaluate it:
-				$to_return += &$_($time) * $coefs->at($i);
-			}
-		}
-		
-		# Return a real scalar if they gave us a scalar
-		return $to_return->at(0) if (ref($time) eq '');
-		# Otherwise return the piddle
-		return $to_return;
-	};
-}
+1;
 
 =pod
 
-  Householder(poly_order => SCALAR,
-    piddle => PIDDLE | piddles => [PIDDLE, PIDDLE, ...]
-    function => FUNCREF | functions => [FUNCREF, FUNCREF, ...],
-    dep_var => PIDDLE | t => PIDDLE)
+This needs documentation. In the meantime, this will have to suffice.
+
+=head1 SYNOPSIS
+
+Here's an example that uses a standard fit:
+
+ use PDL;
+ use PDL::Fit::OO;
+ 
+ my $t = sequence(100)/10;
+ my $signal = 4 * sin($t) - 3 * cos($t) + 0.1 * grandom($t) + 2;
+ 
+ # fit the data to a cosine, sine, and linear polynomial
+ my $fit = $signal->fit(functions => [\&PDL::sin, \&PDL::cos]
+                         , poly => 1, t => $t);
+ 
+ print $fit->get_coefs;
+ # Should look something like 4, -3, 2, 0
+ 
+ # Plot the results for comparison
+ use aliased 'PDL::Graphics::PLplot';
+ my $pl = PLplot->new(DEV => YOUR_FAVORITE_DEVICE_HERE)
+ # Plot the data
+ $pl->xyplot($t, $signal, PLOTTYPE => 'POINTS');
+ # Plot the fit
+ $pl->xyplot($t, $fit->eval_at($t), PLOTTYPE => 'LINE', COLOR => 'RED');
+ 
+
+Here's an example that uses weighted fitting:
+
+ use strict;
+ use warnings;
+ use PDL;
+ use PDL::Fit::OO;
+ 
+ my $t = sequence(60)/10;
+ my $signal = cos($t)->remember_fit_system;
+ 
+ # First try the whole thing, evenly weighted
+ my $unweighted_fit = $signal->fit(polynomial => 2, t => $t);
+ 
+ # Next try to focus on the center, new pi
+ my $weights = exp(-($t - 3.14)**2);
+ my $weighted_fit = $signal->fit(
+                 polynomial => 2
+               , t => $t
+               , weights => $weights
+           );
+ 
+ # Plot the results
+ use aliased 'PDL::Graphics::PLplot';
+ my $pl = PLplot->new(DEV => 'xwin');
+ # Plot the data
+ $pl->xyplot($t, $signal, PLOTTYPE => 'POINTS');
+ print "Plotting the unweighted fit in red\n";
+ # Plot the unweighted fit in red
+ $pl->xyplot($t, $unweighted_fit->eval_at($t), PLOTTYPE => 'LINE', COLOR => 'RED');
+ print "Plotting the weighted fit in blue\n";
+ # Plot the weighted fit in blue
+ $pl->xyplot($t, $weighted_fit->eval_at($t), PLOTTYPE => 'LINE', COLOR => 'BLUE');
+
+=cut

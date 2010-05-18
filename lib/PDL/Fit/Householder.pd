@@ -429,13 +429,13 @@ sub _func_from_fit_barf {
 
 sub _my_barf {
 	my ($caller, $message, $arg_index) = @_;
-	$message = 'incorrect usage of function ';
+	my $to_barf = 'incorrect usage of function ';
 	#            If caller matches...        # refer to as ...
-	$message .= ($caller =~ /householder/)	? 'PDL::Fit::Householder'
+	$to_barf .= ($caller =~ /householder/)	? 'PDL::Fit::Householder'
 											: 'function_from_fit';
 
-	$message .= "\nError with argument $arg_index: $message";
-	barf($message);
+	$to_barf .= "\nError with argument $arg_index: $message";
+	barf($to_barf);
 }
 
 # Utility function that makes sure the supplied $t piddle is good.
@@ -481,7 +481,7 @@ Here is a basic usage summary:
  $func_ref = function_from_fit($coefs, [ORDER], FUNCREF|PIDDLE, FUNCREF|PIDDLE, ..., $t)
 
 
-=cut
+#=cut
 
 sub function_from_fit {
 	my @args = @_;
