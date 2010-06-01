@@ -7,20 +7,25 @@
 use strict;
 use warnings;
 use Carp qw(carp);
-use PDL::Core ':Internal';
 
 package PDL::Fit::OO;
+use PDL::Core ':Internal';
+use PDL;
 
 # Builds a Fit object
 sub new {
 	my $class = shift;
-	return bless shift;
+	return bless {@_};
 }
 
 sub get_coefs {
 	return $_[0]->{coefs};
 }
 
+# Create an anonymous function that wraps up the eval_at method.
+# This allows the use to use the fit function like any other normal
+# function, passing it as an argument to other functions or using
+# it as a callback.
 sub get_fit_func {
 	my $this = shift;
 	return sub { $this->eval_at(@_); }
@@ -41,7 +46,7 @@ sub eval_at {
 	my $to_return = zeroes($m_time);
 
 	# Extract some useful values from the fit object
-	my $coefs = $this->coefs;
+	my $coefs = $this->{coefs};
 	my $t = $this->{timestamp};
 	
 	my $i = 0;
@@ -70,14 +75,16 @@ sub eval_at {
 }
 
 
+package PDL::Fit;
 
 use PDL::Fit::Householder;
+use PDL;
 
 sub PDL::fit {
 	my $data = shift;
 	
 	# Get the args
-	my ($stuff_to_fit, $t, $weights) = _process_args(@_);
+	my ($stuff_to_fit, $t, $weights) = PDL::Fit::_process_args(@_);
 	
 	# Make sure they passed something to fit
 	barf("You didn't pass anything to fit!") unless @$stuff_to_fit;
@@ -125,7 +132,7 @@ sub PDL::fit {
 		);
 }
 
-sub _process_args {
+sub PDL::Fit::_process_args {
 	my @args = @_;
 	
 	barf("Arguments to PDL::fit must be in key/value pairs\n")
@@ -355,7 +362,7 @@ Here's an example that uses weighted fitting:
  use PDL::Fit::OO;
  
  my $t = sequence(60)/10;
- my $signal = cos($t)->remember_fit_system;
+ my $signal = cos($t);
  
  # First try the whole thing, evenly weighted
  my $unweighted_fit = $signal->fit(polynomial => 2, t => $t);
