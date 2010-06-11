@@ -326,6 +326,10 @@ sub PDL::Fit::_process_args {
 
 =pod
 
+=head1 NAME
+
+PDL::Fit::OO - a nice fitting interface for PDL
+
 This needs documentation. In the meantime, this will have to suffice.
 
 =head1 SYNOPSIS
@@ -386,5 +390,92 @@ Here's an example that uses weighted fitting:
  print "Plotting the weighted fit in blue\n";
  # Plot the weighted fit in blue
  $pl->xyplot($t, $weighted_fit->eval_at($t), PLOTTYPE => 'LINE', COLOR => 'BLUE');
+
+
+=head1 DESCRIPTION
+
+=head2 Fit, a PDL Method
+
+When you pull in this module, you will endow your piddles with a new
+method, called C<fit>. The arguments to this method are discussed below.
+The result of this method is a fit object, which I describe in the next
+section.
+
+Valid arguments include:
+
+=over
+
+=item t, time, timestamp, dep, dependent
+
+The dependent variable.
+
+=item weight, weights
+
+Weighting for the fit
+
+=item poly, polynomial
+
+the order of the polynomial for the fit
+
+=item piddle, piddles
+
+A single piddle or an anonymous array holding the collection of piddles
+to fit against
+
+=item func, funcs, function, functions
+
+A function reference or an anonymous array holding the collection of
+functions to include in the fit
+
+=item fit-system
+
+a collection of already-processed arguments
+
+=back
+
+=head2 Fit-Object Methods
+
+The fit object, as returned from the C<fit> PDL method, can do a number
+of things. Its method's include:
+
+=over
+
+=item get_coefs
+
+Returns a piddle with the coefficients from the fit, in the order in
+which they appeared in the fit call (or the order of the fit system, if
+you provided one of those).
+
+=item get_fit_func
+
+Returns a Perl function that corresponds to the fit.
+
+=item get_method
+
+Returns the name of the method used to perform the fit. At the moment,
+this will always be Householder, but this may expand to include other
+methods, such as Slatec methods, as well as Givens rotations or
+singular value decomposition.
+
+=item eval_at
+
+Evaluates the fit at the given values. The argument to eval_at should
+be a piddle.
+
+=back
+
+=head1 TODO
+
+More documentation.
+
+Support for bad values in the fits.
+
+Proper threading.
+
+=head1 AUTHOR
+
+Copyright (c) 2010 David Mertens (dcmertens.perl@gmail.org)
+
+You may redistribute this under the same terms as Perl itself.
 
 =cut
