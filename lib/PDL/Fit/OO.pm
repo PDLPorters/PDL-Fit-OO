@@ -11,11 +11,19 @@ use Carp qw(carp);
 package PDL::Fit::OO;
 use PDL::Core ':Internal';
 use PDL;
+use overload
+	  '""'  => \&stringify
+	;
 
 # Builds a Fit object
 sub new {
 	my $class = shift;
 	return bless {@_};
+}
+
+sub stringify {
+	my $this = shift;
+	return PDL::Core::string($this->get_coefs)
 }
 
 sub get_coefs {
@@ -73,7 +81,6 @@ sub eval_at {
 	# Otherwise return the piddle
 	return $to_return;
 }
-
 
 package PDL::Fit;
 
@@ -346,8 +353,11 @@ Here's an example that uses a standard fit:
  my $fit = $signal->fit(functions => [\&PDL::sin, \&PDL::cos]
                          , poly => 1, t => $t);
  
- print $fit->get_coefs;
- # Should look something like 4, -3, 2, 0
+ # Stringifying the fit gives a string of the coefficients, so
+ print "Coefficients are $fit\n";
+ # gives the same as
+ print "Coefficients are, ", $fit->get_coefs, "\n";
+ # Either way, it should look something like 4, -3, 2, 0
  
  # Plot the results for comparison
  use aliased 'PDL::Graphics::PLplot';
@@ -370,6 +380,8 @@ Here's an example that uses weighted fitting:
  
  # First try the whole thing, evenly weighted
  my $unweighted_fit = $signal->fit(polynomial => 2, t => $t);
+ # Print off the coefficients (automatically stringifies)
+ print "Coefficients are $unweighted_fit\n";
  
  # Next try to focus on the center, new pi
  my $weights = exp(-($t - 3.14)**2);
@@ -461,6 +473,10 @@ singular value decomposition.
 
 Evaluates the fit at the given values. The argument to eval_at should
 be a piddle.
+
+=item stringify
+
+Stringifies the fit. This amounts to stringifying the coefficient piddle.
 
 =back
 
