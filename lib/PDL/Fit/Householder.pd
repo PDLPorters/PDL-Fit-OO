@@ -627,7 +627,7 @@ FUNCTION_FROM_REF
 
 # _Householder
 pp_def('_Householder',
-	Pars => 'y(i, m); A(n, m); [t]v(m);',
+	Pars => '[o]y(i, m); [o]A(n, m); [t]v(m);',
 	Doc => <<'HOUSEHOLDER_DOC',
 =for ref
 
