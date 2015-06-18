@@ -1,7 +1,10 @@
-Revision history for PDL-Fit-Solver
+Revision history for PDL-Fit-OO
 
-0.0.1  Tue Jan 26 15:53:04 2010
-       Initial release.
+0.0.3  Day Mth Dt Ti:me    Year
+       Added PDL::Fit::OO to simplify working with fits
 
 0.0.2  Fri Feb 12 08:31    2010
        Made distrubution with Build.PL instead of Build
+
+0.0.1  Tue Jan 26 15:53:04 2010
+       Initial release.
